@@ -242,7 +242,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // Choose the appropriate initial icon based on theme
     let initial_icon_path = tray::get_icon_path(initial_theme, tray::TrayIconState::Idle, false);
 
-    let mut tray_builder = TrayIconBuilder::new()
+let mut tray_builder = TrayIconBuilder::new()
         .icon(
             Image::from_path(
                 app_handle
@@ -252,8 +252,24 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             )
             .unwrap(),
         )
-        .tooltip(tray::tray_tooltip())
-        .icon_as_template(true);
+        .tooltip(tray::tray_tooltip());
+
+    // Template icons are a macOS menu-bar concept; on Linux they can blank the tray.
+    #[cfg(target_os = "macos")]
+    {
+        tray_builder = tray_builder.icon_as_template(true);
+    }
+
+    // On Linux/Flatpak, explicitly set the temp directory to the shared tray-icon location.
+    // Without this, bwrap sandbox creates files in an isolated namespace that the host
+    // StatusNotifierWatcher cannot access, causing blank tray icons.
+    #[cfg(target_os = "linux")]
+    {
+        let temp_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_string());
+        let tray_temp_path = format!("{}/tray-icon", temp_dir);
+        std::fs::create_dir_all(&tray_temp_path).ok();
+        tray_builder = tray_builder.temp_dir_path(&tray_temp_path);
+    }
 
     // Windows notification-area convention: left click opens the app, right click
     // shows the menu. Elsewhere (macOS menu bar, Linux) the menu stays on left click.
@@ -363,8 +379,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         tray::update_tray_menu(&app_handle_for_listener);
     });
 
-    // Apply the autostart preference (SMAppService login item on macOS 13+,
-    // tauri-plugin-autostart elsewhere)
+// Apply the autostart preference (SMAppService / Flatpak portal / plugin)
     autostart::apply_autostart(app_handle, settings.autostart_enabled);
 
     // Create the recording overlay window (hidden by default)
