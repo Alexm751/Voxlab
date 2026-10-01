@@ -154,6 +154,7 @@ For reliable text input on Linux, install the appropriate tool for your display 
 - **Ubuntu 26.04**: Has Wayland display server by default. `wtype` does not work, you need to install `ydotool` and configure systemd as described [here](https://github.com/cjpais/Handy/pull/557#issuecomment-3781249267).
 - **Wayland**: Install `wtype` (preferred) or `dotool` for text input to work correctly
 - **dotool setup**: Requires adding your user to the `input` group: `sudo usermod -aG input $USER` (then log out and back in)
+- **dotool performance**: For lower paste latency, run `dotoold` in your user session. Handy will automatically use the fast `dotoolc` client when the daemon's pipe is available, and fall back to `dotool` otherwise.
 
 Without these tools, Handy falls back to enigo which may have limited compatibility, especially on Wayland.
 
@@ -405,6 +406,25 @@ On some GPU/driver combinations the WebKitGTK DMA-BUF renderer can cause the win
 ```bash
 WEBKIT_DISABLE_DMABUF_RENDERER=1 handy
 ```
+
+**4. Keep Handy on native Wayland under GNOME (`HANDY_NO_GNOME_XWAYLAND`)**
+
+GNOME's Mutter compositor does not allow regular Wayland windows to choose
+their screen position. When a working XWayland display is available, Handy
+therefore uses GTK's X11 backend so the recording overlay can remain at its
+configured top or bottom position. This applies to the entire Handy process
+and may affect fractional scaling, accessibility integration, or clipboard
+behavior.
+
+To keep Handy on the native Wayland backend instead, set:
+
+```bash
+HANDY_NO_GNOME_XWAYLAND=1 handy
+```
+
+With this opt-out, GNOME chooses the overlay position and it may appear in the
+top-left corner. An explicitly configured `GDK_BACKEND` also takes precedence
+over Handy's automatic selection.
 
 **Making a workaround permanent**
 

@@ -72,10 +72,11 @@ check_runtime() {
     done
 }
 
-# Check for SDK extensions needed only when building from source
+# Check for SDK extensions needed only when building from source.
+# Note: rust-stable//24.08 ships rustc 1.89, but tauri 2.12 / muda 0.20 need
+# ≥1.90 — so Rust comes from rustup inside build_in_sdk, not this extension.
 check_sdk_extensions() {
     local extensions=(
-        "org.freedesktop.Sdk.Extension.rust-stable//24.08"
         "org.freedesktop.Sdk.Extension.llvm19//24.08"
     )
 
@@ -113,11 +114,13 @@ build_in_sdk() {
     flatpak run \
         --share=network \
         --filesystem=home \
-        --env=PATH=/usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/llvm19/bin:/usr/bin:/bin \
+        --env=PATH=/usr/lib/sdk/llvm19/bin:/usr/bin:/bin \
         --env=LIBCLANG_PATH=/usr/lib/sdk/llvm19/lib \
         --env=WHISPER_NO_AVX=ON \
         --env=WHISPER_NO_AVX2=ON \
         --env=HOME="$HOME" \
+        --env=CARGO_HOME="$HOME/.cargo" \
+        --env=RUSTUP_HOME="$HOME/.rustup" \
         --env=SDK_PREFIX="$sdk_prefix" \
         --env=SDK_PROJECT_ROOT="$PROJECT_ROOT" \
         --env=SDK_BUN_PATH="$bun_path" \
@@ -128,6 +131,14 @@ build_in_sdk() {
 
             export PKG_CONFIG_PATH="$SDK_PREFIX/lib/pkgconfig:$SDK_PREFIX/lib64/pkgconfig:${PKG_CONFIG_PATH:-}"
             export LD_LIBRARY_PATH="$SDK_PREFIX/lib:$SDK_PREFIX/lib64:${LD_LIBRARY_PATH:-}"
+
+            # SDK rust-stable//24.08 is rustc 1.89; locked deps need ≥1.90.
+            export PATH="$CARGO_HOME/bin:$PATH"
+            if ! command -v rustc >/dev/null 2>&1 || ! rustc --version 2>/dev/null | grep -qE "rustc 1\.(9[0-9]|[1-9][0-9]{2})\."; then
+                echo "Installing rustup stable (≥1.90 required by tauri 2.12)..."
+                curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --profile minimal --default-toolchain stable
+            fi
+            rustc --version
 
             # Build gtk-layer-shell if not already cached
             if ! pkg-config --exists gtk-layer-shell-0 2>/dev/null; then

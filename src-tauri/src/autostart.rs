@@ -1,12 +1,9 @@
 //! Launch-at-login (autostart) handling.
 //!
-//! All platforms apply the setting through tauri-plugin-autostart, except
-//! macOS 13+ where the app registers itself as a login item via
-//! `SMAppService`. The plugin's launch agent plist carries no app
-//! association, so the System Settings Login Items pane attributes it to the
-//! code-signing certificate's developer name instead of the app (#337).
-//! `SMAppService` login items are attributed to the app bundle itself and
-//! appear under "Open at Login" with the app's name and icon.
+//! All platforms apply the setting through tauri-plugin-autostart, except:
+//! - macOS 13+ where the app registers itself as a login item via
+//!   `SMAppService` (plugin launch-agent attribution issues, #337)
+//! - Flatpak on Linux, where the XDG Background portal is required
 
 use tauri::AppHandle;
 use tauri_plugin_autostart::ManagerExt;
@@ -26,6 +23,18 @@ pub fn apply_autostart(app: &AppHandle, enabled: bool) {
         return;
     }
 
+    #[cfg(target_os = "linux")]
+    if flatpak::is_flatpak() {
+        if let Err(e) = flatpak::request_background_portal(enabled) {
+            log::warn!(
+                "Failed to apply Flatpak autostart (enabled={}): {}",
+                enabled,
+                e
+            );
+        }
+        return;
+    }
+
     let manager = app.autolaunch();
     let result = if enabled {
         manager.enable()
@@ -38,6 +47,55 @@ pub fn apply_autostart(app: &AppHandle, enabled: bool) {
             enabled,
             e
         );
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod flatpak {
+    use std::env;
+    use std::process::Command;
+
+    pub fn is_flatpak() -> bool {
+        env::var("FLATPAK_ID").is_ok()
+    }
+
+    /// Request autostart via the XDG Background portal.
+    ///
+    /// Portal success depends on the desktop environment — some compositors
+    /// do not implement Background and will silently ignore the request.
+    pub fn request_background_portal(enable: bool) -> Result<(), String> {
+        let options = format!(
+            "{{'reason': <'Start Handy automatically at login'>, 'autostart': <{}>, 'dbus-activatable': <false>}}",
+            if enable { "true" } else { "false" },
+        );
+
+        let output = Command::new("gdbus")
+            .args([
+                "call",
+                "--session",
+                "--dest",
+                "org.freedesktop.portal.Desktop",
+                "--object-path",
+                "/org/freedesktop/portal/desktop",
+                "--method",
+                "org.freedesktop.portal.Background.RequestBackground",
+                "",
+                &options,
+            ])
+            .output()
+            .map_err(|e| format!("Failed to execute gdbus: {}", e))?;
+
+        if output.status.success() {
+            log::info!(
+                "Background portal request sent (autostart={})",
+                if enable { "enable" } else { "disable" }
+            );
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            log::warn!("Background portal request failed: {}", stderr);
+            Err(format!("Background portal request failed: {}", stderr))
+        }
     }
 }
 

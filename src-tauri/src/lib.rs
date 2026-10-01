@@ -16,6 +16,8 @@ mod memory;
 mod overlay;
 mod paste_tx;
 pub mod portable;
+#[cfg(target_os = "linux")]
+mod remote_desktop;
 mod secure_input;
 mod settings;
 mod shortcut;
@@ -26,6 +28,7 @@ mod tray_i18n;
 mod utils;
 
 pub use cli::CliArgs;
+
 #[cfg(debug_assertions)]
 use specta_typescript::{BigIntExportBehavior, Typescript};
 use tauri_specta::{collect_commands, collect_events, Builder};
@@ -189,6 +192,11 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // after onboarding completes. This avoids triggering permission dialogs
     // on macOS before the user is ready.
 
+#[cfg(target_os = "linux")]
+    {
+        crate::remote_desktop::init_authorization(app_handle);
+    }
+
     // Initialize the managers. The audio recorder receives the streaming router
     // explicitly, so always-on microphone startup can wire live-preview frames
     // even before Tauri state is populated.
@@ -241,7 +249,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // Choose the appropriate initial icon based on theme
     let initial_icon_path = tray::get_icon_path(initial_theme, tray::TrayIconState::Idle, false);
 
-    let mut tray_builder = TrayIconBuilder::new()
+let mut tray_builder = TrayIconBuilder::new()
         .icon(
             Image::from_path(
                 app_handle
@@ -251,8 +259,24 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             )
             .unwrap(),
         )
-        .tooltip(tray::tray_tooltip())
-        .icon_as_template(true);
+        .tooltip(tray::tray_tooltip());
+
+    // Template icons are a macOS menu-bar concept; on Linux they can blank the tray.
+    #[cfg(target_os = "macos")]
+    {
+        tray_builder = tray_builder.icon_as_template(true);
+    }
+
+    // On Linux/Flatpak, explicitly set the temp directory to the shared tray-icon location.
+    // Without this, bwrap sandbox creates files in an isolated namespace that the host
+    // StatusNotifierWatcher cannot access, causing blank tray icons.
+    #[cfg(target_os = "linux")]
+    {
+        let temp_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_string());
+        let tray_temp_path = format!("{}/tray-icon", temp_dir);
+        std::fs::create_dir_all(&tray_temp_path).ok();
+        tray_builder = tray_builder.temp_dir_path(&tray_temp_path);
+    }
 
     // Windows notification-area convention: left click opens the app, right click
     // shows the menu. Elsewhere (macOS menu bar, Linux) the menu stays on left click.
@@ -362,8 +386,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         tray::update_tray_menu(&app_handle_for_listener);
     });
 
-    // Apply the autostart preference (SMAppService login item on macOS 13+,
-    // tauri-plugin-autostart elsewhere)
+// Apply the autostart preference (SMAppService / Flatpak portal / plugin)
     autostart::apply_autostart(app_handle, settings.autostart_enabled);
 
     // Create the recording overlay window (hidden by default)
@@ -666,8 +689,9 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_word_correction_threshold_setting,
             shortcut::change_extra_recording_buffer_setting,
             shortcut::change_paste_delay_ms_setting,
-            shortcut::change_paste_delay_after_ms_setting,
+shortcut::change_paste_delay_after_ms_setting,
             shortcut::change_reliable_paste_setting,
+            shortcut::change_remote_desktop_key_event_delay_ms_setting,
             shortcut::change_paste_method_setting,
             shortcut::get_available_typing_tools,
             shortcut::change_typing_tool_setting,
@@ -713,6 +737,7 @@ pub fn run(cli_args: CliArgs) {
             trigger_update_check,
             show_main_window_command,
             commands::cancel_operation,
+            commands::overlay_hidden_ack,
             commands::is_portable,
             commands::is_update_checks_locked,
             commands::get_app_dir_path,
@@ -726,6 +751,10 @@ pub fn run(cli_args: CliArgs) {
             commands::check_apple_intelligence_available,
             commands::initialize_enigo,
             commands::initialize_shortcuts,
+            commands::is_wayland_active,
+            commands::request_remote_desktop_authorization,
+            commands::delete_remote_desktop_authorization,
+            commands::get_remote_desktop_authorization,
             commands::models::get_available_models,
             commands::models::get_model_info,
             commands::models::download_model,

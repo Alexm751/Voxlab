@@ -110,6 +110,16 @@
         "title": "Hjälpmedelsåtkomst",
         "description": "Krävs för att skriva transkriberad text i dina program."
       },
+      "remoteDesktop": {
+        "title": "Skrivbehörighet",
+        "description": "Tillåt Handy att automatiskt infoga dikterad text i den aktiva appen.",
+        "note": "Du kan inaktivera eller aktivera den här behörigheten när som helst i inställningarna.",
+        "button": "Tillåt automatisk skrivning",
+        "skipButton": "Inte nu",
+        "warningTooltip": "Skrivbehörighet är inte konfigurerad",
+        "configured": "Konfigurerad",
+        "notConfigured": "Behöver konfigureras"
+      },
       "grant": "Bevilja behörighet",
       "granted": "Beviljad",
       "waiting": "Väntar...",
@@ -329,7 +339,14 @@
           "none": "Ingen",
           "externalScript": "Externt skript"
         },
-        "externalScriptPlaceholder": "/sökväg/till/ditt/skript.sh"
+        "externalScriptPlaceholder": "/sökväg/till/ditt/skript.sh",
+        "portal": {
+          "buttonRequesting": "Begär…",
+          "errors": {
+            "requestFailed": "Behörighetsbegäran misslyckades.",
+            "revokeFailed": "Det gick inte att ta bort behörigheten."
+          }
+        }
       },
       "typingTool": {
         "title": "Skrivverktyg",
@@ -398,6 +415,11 @@
       "fillerWordRemoval": {
         "title": "Ta bort utfyllnadsord",
         "description": "Tar bort vanliga tvekljud från transkriberingar. Stäng av för att behålla dem."
+      },
+      "typingDelay": {
+        "title": "Skrivfördröjning",
+        "description": "Styr hastigheten som används för att skicka skrivhändelser. Öka värdet om tecken skrivs i fel ordning.",
+        "unit": "ms"
       }
     },
     "postProcessing": {

@@ -165,6 +165,14 @@ async changeReliablePasteSetting(enabled: boolean) : Promise<Result<null, string
     else return { status: "error", error: e  as any };
 }
 },
+async changeRemoteDesktopKeyEventDelayMsSetting(ms: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_remote_desktop_key_event_delay_ms_setting", { ms }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changePasteMethodSetting(method: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_paste_method_setting", { method }) };
@@ -473,7 +481,7 @@ async changeTranscribeGpuDevice(device: string | null) : Promise<Result<null, st
  * First-call cost is dominated by enumerating GPU devices through the
  * transcribe.cpp Metal/Vulkan backend, which loads dynamic libraries and
  * probes hardware. Run it on the blocking pool so the webview thread
- * stays responsive — see also the startup pre-warm in `lib.rs`.
+ * stays responsive Ã¢â‚¬â€ see also the startup pre-warm in `lib.rs`.
  */
 async getAvailableAccelerators() : Promise<AvailableAccelerators> {
     return await TAURI_INVOKE("get_available_accelerators");
@@ -529,6 +537,15 @@ async showMainWindowCommand() : Promise<Result<null, string>> {
 },
 async cancelOperation() : Promise<void> {
     await TAURI_INVOKE("cancel_operation");
+},
+/**
+ * Frontend acknowledgement that the hide-overlay unmount has been committed
+ * to the DOM. The overlay hide chain waits for this before parking the
+ * surface; a command (not an event) so it is delivered even while the GTK
+ * main thread is busy with the paste burst.
+ */
+async overlayHiddenAck() : Promise<void> {
+    await TAURI_INVOKE("overlay_hidden_ack");
 },
 async isPortable() : Promise<boolean> {
     return await TAURI_INVOKE("is_portable");
@@ -610,6 +627,7 @@ async checkAppleIntelligenceAvailable() : Promise<boolean> {
 /**
  * Try to initialize Enigo (keyboard/mouse simulation).
  * On macOS, this will return an error if accessibility permissions are not granted.
+ * On Linux, Enigo is skipped if native tools are available.
  */
 async initializeEnigo() : Promise<Result<null, string>> {
     try {
@@ -631,6 +649,40 @@ async initializeShortcuts() : Promise<Result<null, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Returns whether the current Linux desktop session uses Wayland.
+ */
+async isWaylandActive() : Promise<boolean> {
+    return await TAURI_INVOKE("is_wayland_active");
+},
+/**
+ * Requests Remote Desktop portal authorization for keyboard input on Wayland.
+ */
+async requestRemoteDesktopAuthorization() : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("request_remote_desktop_authorization") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Deletes the stored Remote Desktop portal authorization token.
+ */
+async deleteRemoteDesktopAuthorization() : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_remote_desktop_authorization") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Returns the cached Remote Desktop portal authorization state.
+ */
+async getRemoteDesktopAuthorization() : Promise<boolean> {
+    return await TAURI_INVOKE("get_remote_desktop_authorization");
 },
 async getAvailableModels() : Promise<Result<ModelInfo[], string>> {
     try {
@@ -908,10 +960,9 @@ async updateRecordingRetentionPeriod(period: string) : Promise<Result<null, stri
 }
 },
 /**
- * Checks if the Mac is a laptop by detecting battery presence
+ * Stub implementation for non-macOS platforms.
  * 
- * This uses pmset to check for battery information.
- * Returns true if a battery is detected (laptop), false otherwise (desktop)
+ * Returns false because laptop detection is macOS-specific in Handy.
  */
 async isLaptop() : Promise<Result<boolean, string>> {
     try {
@@ -944,7 +995,7 @@ streamTextEvent: "stream-text-event"
 
 /**
  * The container-level `serde(default)` (backed by the `Default` impl below)
- * guarantees every field — including ones added in the future — falls back to
+ * guarantees every field Ã¢â‚¬â€ including ones added in the future Ã¢â‚¬â€ falls back to
  * its `get_default_settings()` value when missing from a stored settings
  * object, so a partial store can never fail the whole load (#1619).
  * Field-level defaults below take precedence where present.
@@ -975,7 +1026,7 @@ hold_threshold_ms?: number; audio_feedback?: boolean; audio_feedback_volume?: nu
  * The app version whose What's New the user has already seen. Fresh installs
  * default to the current version (nothing is "new" to them). Existing users
  * upgrading from before this key existed are blanked by the migration so they
- * see the current release's notes — see `apply_settings_migrations`.
+ * see the current release's notes Ã¢â‚¬â€ see `apply_settings_migrations`.
  */
 whats_new_last_seen_version?: string; selected_model?: string; onboarding_completed?: boolean; always_on_microphone?: boolean; selected_microphone?: string | null; 
 /**
@@ -1001,10 +1052,10 @@ transcribe_gpu_device?: string | null; extra_recording_buffer_ms?: number; vad_e
 vad_backend?: VadBackend; 
 /**
  * Which recording overlay to show: None / Minimal / Live. Streaming mode is
- * not gated on this — that follows model capability. Migrated from the old
- * `overlay_position` (position `none` → style `None`).
+ * not gated on this Ã¢â‚¬â€ that follows model capability. Migrated from the old
+ * `overlay_position` (position `none` Ã¢â€ â€™ style `None`).
  */
-overlay_style?: OverlayStyle }
+overlay_style?: OverlayStyle; remote_desktop_key_event_delay_ms?: number; remote_desktop_token?: string | null }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
@@ -1014,7 +1065,7 @@ export type CustomSounds = { start: boolean; stop: boolean }
 export type EngineType = 
 /**
  * Any GGML/GGUF model loaded through transcribe-cpp (Whisper, Parakeet,
- * Voxtral, Qwen3-ASR, Nemotron, …). The architecture is auto-detected from
+ * Voxtral, Qwen3-ASR, Nemotron, Ã¢â‚¬Â¦). The architecture is auto-detected from
  * the file, so this one variant covers the whole transcribe-cpp family.
  */
 "TranscribeCpp" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "Cohere"
@@ -1031,7 +1082,7 @@ export type ImplementationChangeResult = { success: boolean;
 reset_bindings: string[] }
 export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_pid: number | null; culprit_name: string | null; 
 /**
- * Counts only — key identity is deliberately never captured.
+ * Counts only Ã¢â‚¬â€ key identity is deliberately never captured.
  */
 key_down: number; key_up: number; flags_changed: number; mouse: number; duration_ms: number }
 export type KeyboardImplementation = "tauri" | "handy_keys"
@@ -1040,7 +1091,7 @@ export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 /**
- * Where a model comes from and how Handy obtains it — the routing discriminant
+ * Where a model comes from and how Handy obtains it Ã¢â‚¬â€ the routing discriminant
  * for downloading and on-disk resolution.
  */
 export type ModelSource = 
@@ -1059,7 +1110,7 @@ sha256: string | null } } |
  */
 { HuggingFace: { repo_id: string; revision: string } } | 
 /**
- * Already present on disk — a user-provided custom model, or one discovered
+ * Already present on disk Ã¢â‚¬â€ a user-provided custom model, or one discovered
  * in a shared cache. Nothing to download.
  */
 "Local"
@@ -1142,7 +1193,7 @@ export type StreamPhase =
  */
 "listening" | 
 /**
- * Finalizing or post-processing — show a spinner.
+ * Finalizing or post-processing Ã¢â‚¬â€ show a spinner.
  */
 "working"
 /**
@@ -1169,7 +1220,7 @@ export type StreamWorkKind = "transcribing" | "polishing"
  */
 export type Theme = "system" | "light" | "dark"
 export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu"
-export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
+export type TypingTool = "auto" | "remote_desktop" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type VadBackend = "silero" | "earshot"
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }
 

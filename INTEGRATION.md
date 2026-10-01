@@ -1,8 +1,8 @@
 # INTEGRATION.md — registro Voxlab
 
 ## Come riprendere
-- **Stato:** Fase 0b **chiusa** — CI Flatpak-only su `main` (PR [#12](https://github.com/Alexm751/Voxlab/pull/12), run verde [36865258709](https://github.com/Alexm751/Voxlab/actions/runs/36865258709)).
-- **Prossimo passo:** frontier Wayfinder — [Decidere: #1560 vs split](https://github.com/Alexm751/Voxlab/issues/4) poi [Fase 1: ondata Linux GNOME](https://github.com/Alexm751/Voxlab/issues/5). Research #3 già chiusa (preferire split #548→#1287→#689).
+- **Stato:** Fase 1 in corso su `wave/linux-gnome` — merge Handy Linux GNOME (overlay, portal shortcuts, RemoteDesktop, Flatpak).
+- **Prossimo passo:** CI verde sulla PR interna → merge su `main`; poi riprendere #1568 (parziale) e #1300 (keyboard None) come Plan B.
 - **Workspace:** `C:\Users\Alessandro\OneDrive\Sviluppo\VoiceLab`
 - **Repo locale:** `VoiceLab\Voxlab` → https://github.com/Alexm751/Voxlab
 - **Upstream (sola lettura):** https://github.com/cjpais/Handy
@@ -19,6 +19,7 @@
 | PR verso Handy | No |
 | Packaging Flatpak CI | Manifest/script da Handy #548 + script SDK build da #1560 (SPIRV/transcribe); senza merge del resto delle PR |
 | Ayatana su x86_64 | `PKG_CONFIG_PATH` + `ldflags -L/app/lib64` + `LIBRARY_PATH`/`LD_LIBRARY_PATH` (lib64) |
+| Wayland/Flatpak input | **split** #548→#1287→#689 (non #1560) |
 
 ## Checklist setup
 - [x] Clone Handy → `Voxlab/`
@@ -33,7 +34,7 @@
 - [x] Graphify skill/rule installata in `Voxlab/.cursor/rules/`
 - [x] Graphify grafo (`graphify-out/`)
 - [x] CI Flatpak (PR [#12](https://github.com/Alexm751/Voxlab/pull/12) mergiata)
-- [ ] Merge PR Linux (Fase 1+)
+- [ ] Merge PR Linux (Fase 1 — branch `wave/linux-gnome`)
 
 ## Checklist CI (Fase 0b)
 - [x] Workflow upstream multi-piattaforma → solo `workflow_dispatch` (disabilitati via `gh workflow disable`)
@@ -44,13 +45,18 @@
 ## PR da integrare (Fase 1)
 | PR | Titolo | Stato |
 |----|--------|-------|
-| #1909 | overlay Wayland | pending |
-| #1388 | dotool / HandyKeys | pending |
-| #1505 | overlay GNOME XWayland | pending |
-| #1560 / #689+#1287+#548 | Wayland+Flatpak | pending (packaging #548 parziale già in CI; research: preferire split) |
-| #1568 (parziale) | fallback typing tools | pending |
-| #1300 | keyboard None | pending |
-| minori | #2109 #1722 #2148 #2131 #2102 #2025 | pending |
+| #1909 | overlay Wayland | merged on wave |
+| #1388 | dotool / HandyKeys | merged on wave |
+| #1505 | overlay GNOME XWayland | merged on wave (conflitti risolti) |
+| #548 | Flatpak packaging | merged on wave (packaging CI già collaudato; + portal autostart/tray) |
+| #1287 | portal GlobalShortcuts | merged on wave |
+| #689 | RemoteDesktop | merged on wave |
+| #2109 | X11 Shift+Insert | merged on wave |
+| #1722 | X11 Enigo keymap | merged on wave |
+| #1568 (parziale) | fallback typing tools | deferred (conflitti; meno rilevante in Flatpak) |
+| #1300 | keyboard None | deferred (Plan B; conflitti i18n) |
+| minori | #2148 #2131 #2102 #2025 | tentati / vedi log |
+| #1774 | PipeWire | fog — solo se mic problematico |
 
 ## Note
 - GitNexus e Graphify vanno rieseguiti dopo merge sostanziosi.

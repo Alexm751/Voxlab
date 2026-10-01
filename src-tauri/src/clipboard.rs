@@ -3,7 +3,7 @@ use crate::input::{self, EnigoState};
 use crate::settings::TypingTool;
 use crate::settings::{get_settings, AutoSubmitKey, ClipboardHandling, PasteMethod};
 use enigo::{Direction, Enigo, Key, Keyboard};
-use log::info;
+use log::{info, warn};
 use std::process::Command;
 #[cfg(target_os = "linux")]
 use std::sync::OnceLock;
@@ -11,6 +11,8 @@ use std::time::Duration;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
+#[cfg(target_os = "linux")]
+use crate::remote_desktop;
 #[cfg(target_os = "linux")]
 use crate::utils::{is_gnome_wayland, is_kde_wayland, is_wayland};
 
@@ -21,11 +23,22 @@ fn with_enigo<T>(
     let enigo_state = app_handle
         .try_state::<EnigoState>()
         .ok_or("Enigo state not initialized")?;
-    let mut enigo = enigo_state
+    let mut enigo_slot = enigo_state
         .0
         .lock()
         .map_err(|e| format!("Failed to lock Enigo: {}", e))?;
-    f(&mut enigo)
+
+    // On X11 a long-lived Enigo instance can hold keycode bindings the server
+    // has since discarded; recreate before each injection (#1722).
+    #[cfg(target_os = "linux")]
+    if !is_wayland() {
+        input::refresh_enigo(&mut enigo_slot)?;
+    }
+
+    let enigo = enigo_slot
+        .as_mut()
+        .ok_or("Enigo instance is not available")?;
+    f(enigo)
 }
 
 fn write_text_to_clipboard(app_handle: &AppHandle, text: &str) -> Result<(), String> {
@@ -39,6 +52,68 @@ fn write_text_to_clipboard(app_handle: &AppHandle, text: &str) -> Result<(), Str
         .clipboard()
         .write_text(text)
         .map_err(|e| format!("Failed to write to clipboard: {}", e))
+}
+
+// VTE requests PRIMARY asynchronously after the synthetic Shift+Insert event.
+#[cfg(target_os = "linux")]
+const X11_PRIMARY_RESTORE_DELAY: Duration = Duration::from_millis(250);
+
+#[cfg(target_os = "linux")]
+struct X11PrimaryRestore {
+    previous_text: Option<String>,
+    pasted_text: String,
+}
+
+#[cfg(target_os = "linux")]
+fn should_mirror_shift_insert_to_x11_primary(
+    paste_method: &PasteMethod,
+    is_wayland_session: bool,
+) -> bool {
+    !is_wayland_session && *paste_method == PasteMethod::ShiftInsert
+}
+
+#[cfg(target_os = "linux")]
+fn prepare_x11_primary_paste(text: &str, paste_method: &PasteMethod) -> Option<X11PrimaryRestore> {
+    if !should_mirror_shift_insert_to_x11_primary(paste_method, is_wayland()) {
+        return None;
+    }
+
+    // VTE terminals paste PRIMARY for Shift+Insert on X11, while many GUI apps
+    // use the regular CLIPBOARD selection for the same shortcut. Mirror to both.
+    let primary = gtk::Clipboard::get(&gtk::gdk::SELECTION_PRIMARY);
+    let previous_text = primary.wait_for_text().map(|text| text.to_string());
+
+    info!("Mirroring Shift+Insert paste text to X11 PRIMARY selection");
+    primary.set_text(text);
+
+    Some(X11PrimaryRestore {
+        previous_text,
+        pasted_text: text.to_string(),
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn restore_x11_primary_if_unchanged(paste: X11PrimaryRestore) {
+    let primary = gtk::Clipboard::get(&gtk::gdk::SELECTION_PRIMARY);
+    let current_text = primary.wait_for_text().map(|text| text.to_string());
+
+    if current_text.as_deref() != Some(paste.pasted_text.as_str()) {
+        info!("X11 PRIMARY selection changed during paste; leaving it untouched");
+        return;
+    }
+
+    if let Some(previous_text) = paste.previous_text {
+        primary.set_text(&previous_text);
+    } else {
+        primary.clear();
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn schedule_x11_primary_restore(paste: X11PrimaryRestore) {
+    gtk::glib::timeout_add_local_once(X11_PRIMARY_RESTORE_DELAY, move || {
+        restore_x11_primary_if_unchanged(paste)
+    });
 }
 
 fn finish_clipboard_paste(
@@ -73,6 +148,9 @@ fn paste_via_clipboard(
     // Write text to clipboard first
     write_text_to_clipboard(app_handle, text)?;
 
+    #[cfg(target_os = "linux")]
+    let x11_primary_paste = prepare_x11_primary_paste(text, paste_method);
+
     std::thread::sleep(Duration::from_millis(paste_delay_ms));
 
     // Capture key injection errors so the original clipboard is restored before
@@ -100,6 +178,14 @@ fn paste_via_clipboard(
         Ok(())
     })();
 
+    #[cfg(target_os = "linux")]
+    if let Some(x11_primary_paste) = x11_primary_paste {
+        // Schedule before the normal clipboard restore. The callback cannot run
+        // until this main-thread paste function returns to the GLib event loop,
+        // which gives VTE time to request PRIMARY first.
+        schedule_x11_primary_restore(x11_primary_paste);
+    }
+
     finish_clipboard_paste(paste_result, paste_delay_after_ms, || {
         // Restore original clipboard content even when key injection failed.
         // Text takes priority so this path stays identical to the previous behavior;
@@ -111,7 +197,7 @@ fn paste_via_clipboard(
             info!("Restoring image to clipboard");
             let _ = clipboard.write_image(&image);
         } else {
-            // Nothing was there to begin with — don't leave the transcription behind.
+            // Nothing was there to begin with â€” don't leave the transcription behind.
             let _ = clipboard.clear();
         }
     })
@@ -122,9 +208,24 @@ fn paste_via_clipboard(
 #[cfg(target_os = "linux")]
 fn try_send_key_combo_linux(paste_method: &PasteMethod) -> Result<bool, String> {
     if is_wayland() {
-        // Wayland: prefer wtype (but not on KDE or GNOME), then dotool, then ydotool
+        // Wayland: prefer Remote Desktop portal (works with any layout/language),
+        // then wtype (but not on KDE or GNOME), then dotool, then ydotool
+        if is_remote_desktop_available() {
+            info!("Using Remote Desktop portal for key combo");
+            let result = match paste_method {
+                PasteMethod::CtrlV => remote_desktop::send_ctrl_v(),
+                _ => remote_desktop::send_paste_key_combo(paste_method),
+            };
+            match result {
+                Ok(()) => return Ok(true),
+                Err(err) => warn!(
+                    "Remote Desktop key combo failed, trying next fallback: {}",
+                    err
+                ),
+            }
+        }
         // Note: wtype doesn't work on KDE (no zwp_virtual_keyboard_manager_v1 support)
-        // or on GNOME/Mutter (same reason — Mutter deliberately does not implement
+        // or on GNOME/Mutter (same reason â€” Mutter deliberately does not implement
         // the virtual-keyboard-v1 protocol).
         if !is_kde_wayland() && !is_gnome_wayland() && is_wtype_available() {
             info!("Using wtype for key combo");
@@ -165,6 +266,11 @@ fn try_direct_typing_linux(text: &str, preferred_tool: TypingTool) -> Result<boo
     // If user specified a tool, try only that one
     if preferred_tool != TypingTool::Auto {
         return match preferred_tool {
+            TypingTool::RemoteDesktop if is_remote_desktop_supported() => {
+                info!("Using user-specified Remote Desktop portal");
+                type_text_via_remote_desktop(text)?;
+                Ok(true)
+            }
             TypingTool::Wtype if is_wtype_available() => {
                 info!("Using user-specified wtype");
                 type_text_via_wtype(text)?;
@@ -199,6 +305,16 @@ fn try_direct_typing_linux(text: &str, preferred_tool: TypingTool) -> Result<boo
 
     // Auto mode - existing fallback chain
     if is_wayland() {
+        if is_remote_desktop_available() {
+            info!("Using Remote Desktop portal for direct text input");
+            match type_text_via_remote_desktop(text) {
+                Ok(()) => return Ok(true),
+                Err(err) => warn!(
+                    "Remote Desktop direct input failed, trying next fallback: {}",
+                    err
+                ),
+            }
+        }
         // KDE Wayland: prefer kwtype (uses KDE Fake Input protocol, supports umlauts)
         if is_kde_wayland() && is_kwtype_available() {
             info!("Using kwtype for direct text input on KDE Wayland");
@@ -207,7 +323,7 @@ fn try_direct_typing_linux(text: &str, preferred_tool: TypingTool) -> Result<boo
         }
         // Wayland: prefer wtype, then dotool, then ydotool
         // Note: wtype doesn't work on KDE (no zwp_virtual_keyboard_manager_v1 support)
-        // or on GNOME/Mutter (same reason — Mutter deliberately does not implement
+        // or on GNOME/Mutter (same reason â€” Mutter deliberately does not implement
         // the virtual-keyboard-v1 protocol).
         if !is_kde_wayland() && !is_gnome_wayland() && is_wtype_available() {
             info!("Using wtype for direct text input");
@@ -246,6 +362,9 @@ fn try_direct_typing_linux(text: &str, preferred_tool: TypingTool) -> Result<boo
 #[cfg(target_os = "linux")]
 pub fn get_available_typing_tools() -> Vec<String> {
     let mut tools = vec!["auto".to_string()];
+    if is_remote_desktop_supported() {
+        tools.push("remote_desktop".to_string());
+    }
     if is_wtype_available() {
         tools.push("wtype".to_string());
     }
@@ -262,6 +381,40 @@ pub fn get_available_typing_tools() -> Vec<String> {
         tools.push("xdotool".to_string());
     }
     tools
+}
+
+/// True when a Linux native typing path exists so Enigo can be skipped.
+#[cfg(target_os = "linux")]
+pub fn has_native_input_tool() -> bool {
+    is_remote_desktop_supported()
+        || is_wtype_available()
+        || is_kwtype_available()
+        || is_dotool_available()
+        || is_ydotool_available()
+        || is_xdotool_available()
+}
+
+/// Check if wtype is available (Wayland text input tool)
+#[cfg(target_os = "linux")]
+fn is_remote_desktop_available() -> bool {
+    remote_desktop::is_available()
+}
+
+#[cfg(target_os = "linux")]
+fn is_remote_desktop_supported() -> bool {
+    is_wayland()
+}
+
+/// Type text directly via the Remote Desktop portal.
+#[cfg(target_os = "linux")]
+fn type_text_via_remote_desktop(text: &str) -> Result<(), String> {
+    match remote_desktop::send_type_text(text) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            warn!("Remote Desktop direct input failed: {}", err);
+            Err(format!("Remote Desktop portal failed: {}", err))
+        }
+    }
 }
 
 /// Check if wtype is available (Wayland text input tool)
@@ -282,6 +435,46 @@ fn is_dotool_available() -> bool {
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false)
+}
+
+#[cfg(target_os = "linux")]
+fn is_dotoolc_available() -> bool {
+    Command::new("which")
+        .arg("dotoolc")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "linux")]
+fn is_dotool_daemon_ready() -> bool {
+    use std::fs::{metadata, OpenOptions};
+    use std::os::unix::fs::{FileTypeExt, OpenOptionsExt};
+    use std::path::PathBuf;
+
+    let pipe = std::env::var_os("DOTOOL_PIPE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/tmp/dotool-pipe"));
+
+    let Ok(metadata) = metadata(&pipe) else {
+        return false;
+    };
+    if !metadata.file_type().is_fifo() {
+        return false;
+    }
+
+    // Opening a FIFO for writing in non-blocking mode succeeds only when a
+    // reader is already attached. That lets us avoid hanging on a stale pipe.
+    OpenOptions::new()
+        .write(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(pipe)
+        .is_ok()
+}
+
+#[cfg(target_os = "linux")]
+fn should_use_dotoolc() -> bool {
+    is_dotoolc_available() && is_dotool_daemon_ready()
 }
 
 #[cfg(target_os = "linux")]
@@ -474,33 +667,58 @@ fn type_text_via_xdotool(text: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Type text directly via dotool (works on both Wayland and X11 via uinput).
+/// Run one dotool-compatible command by writing it to the selected executable.
 #[cfg(target_os = "linux")]
-fn type_text_via_dotool(text: &str) -> Result<(), String> {
+fn run_dotool_command_with(executable: &str, command: &str) -> Result<(), String> {
     use std::io::Write;
     use std::process::Stdio;
 
-    let mut child = Command::new("dotool")
+    let mut child = Command::new(executable)
         .stdin(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("Failed to spawn dotool: {}", e))?;
+        .map_err(|e| format!("Failed to spawn {}: {}", executable, e))?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        // dotool uses "type <text>" command
-        writeln!(stdin, "type {}", text)
-            .map_err(|e| format!("Failed to write to dotool stdin: {}", e))?;
+        writeln!(stdin, "{}", command)
+            .map_err(|e| format!("Failed to write to {} stdin: {}", executable, e))?;
     }
 
     let output = child
         .wait_with_output()
-        .map_err(|e| format!("Failed to wait for dotool: {}", e))?;
+        .map_err(|e| format!("Failed to wait for {}: {}", executable, e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("dotool failed: {}", stderr));
+        return Err(format!("{} failed: {}", executable, stderr));
     }
 
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn run_dotool_command(command: &str) -> Result<(), String> {
+    // dotoold keeps the uinput device warm. Use its lightweight dotoolc client
+    // when available, but keep plain dotool as the compatibility fallback.
+    if should_use_dotoolc() {
+        info!("Using dotoolc client for dotool command");
+        match run_dotool_command_with("dotoolc", command) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                warn!(
+                    "dotoolc command failed; falling back to cold dotool invocation: {}",
+                    error
+                );
+            }
+        }
+    }
+
+    run_dotool_command_with("dotool", command)
+}
+
+/// Type text directly via dotool (works on both Wayland and X11 via uinput).
+#[cfg(target_os = "linux")]
+fn type_text_via_dotool(text: &str) -> Result<(), String> {
+    run_dotool_command(&format!("type {}", text))
 }
 
 /// Type text directly via ydotool (uinput-based, requires ydotoold daemon).
@@ -539,7 +757,7 @@ fn type_text_via_kwtype(text: &str) -> Result<(), String> {
 }
 
 /// Write text to clipboard via wl-copy (Wayland clipboard tool).
-/// Uses Stdio::null() to avoid blocking on repeated calls — wl-copy forks a
+/// Uses Stdio::null() to avoid blocking on repeated calls â€” wl-copy forks a
 /// daemon that inherits piped fds, causing read_to_end to hang indefinitely.
 #[cfg(target_os = "linux")]
 fn write_clipboard_via_wl_copy(text: &str) -> Result<(), String> {
@@ -587,26 +805,14 @@ fn send_key_combo_via_wtype(paste_method: &PasteMethod) -> Result<(), String> {
 /// Send a key combination (e.g., Ctrl+V) via dotool.
 #[cfg(target_os = "linux")]
 fn send_key_combo_via_dotool(paste_method: &PasteMethod) -> Result<(), String> {
-    let command;
-    match paste_method {
-        PasteMethod::CtrlV => command = "echo key ctrl+v | dotool",
-        PasteMethod::ShiftInsert => command = "echo key shift+insert | dotool",
-        PasteMethod::CtrlShiftV => command = "echo key ctrl+shift+v | dotool",
+    let command = match paste_method {
+        PasteMethod::CtrlV => "key ctrl+v",
+        PasteMethod::ShiftInsert => "key shift+insert",
+        PasteMethod::CtrlShiftV => "key ctrl+shift+v",
         _ => return Err("Unsupported paste method".into()),
-    }
-    use std::process::Stdio;
-    let status = Command::new("sh")
-        .arg("-c")
-        .arg(command)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map_err(|e| format!("Failed to execute dotool: {}", e))?;
-    if !status.success() {
-        return Err("dotool failed".into());
-    }
+    };
 
-    Ok(())
+    run_dotool_command(command)
 }
 
 #[cfg(target_os = "linux")]
@@ -943,6 +1149,27 @@ e.g. 28:1 28:0 means pressing on the Enter button on a standard US keyboard.
             ydotool_key_args(&PasteMethod::ShiftInsert, YdotoolKeySyntax::RawKeycodes).unwrap(),
             ["key", "42:1", "110:1", "110:0", "42:0"]
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn x11_primary_mirroring_requires_shift_insert_on_x11() {
+        assert!(should_mirror_shift_insert_to_x11_primary(
+            &PasteMethod::ShiftInsert,
+            false
+        ));
+        assert!(!should_mirror_shift_insert_to_x11_primary(
+            &PasteMethod::CtrlV,
+            false
+        ));
+        assert!(!should_mirror_shift_insert_to_x11_primary(
+            &PasteMethod::CtrlShiftV,
+            false
+        ));
+        assert!(!should_mirror_shift_insert_to_x11_primary(
+            &PasteMethod::ShiftInsert,
+            true
+        ));
     }
 
     #[test]
