@@ -60,6 +60,24 @@
 | minori | #2148 #2131 #2102 #2025 | tentati / vedi log |
 | #1774 | PipeWire | fog — solo se mic problematico |
 
+## PR da integrare (Fase 2)
+| PR | Titolo | Stato |
+|----|--------|-------|
+| #2144 | default input config | merged on wave |
+| #2110 | don't abort startup if always-on mic fails | merged on wave |
+| #2155 | time out hung post-processing | merged on wave |
+| #2159 | autostart off startup thread | merged on wave (lib.rs → reconcile_autostart) |
+| #2108 | settings listeners once | merged on wave |
+| #2150 | warn digital silence | merged on wave |
+| #2097 | tap vs hold by key event time | merged on wave |
+| #2130 | numpad keys in shortcuts | merged on wave |
+| #2168 | mute immediately option | merged on wave |
+| #1644 | cpal 0.17 / macOS 26 | deferred (decisione #6) |
+| #1875 | follow changed default mic | deferred (conflict managers/audio.rs) |
+| #1713 | transcription hang + audio_feedback | deferred (conflict recorder.rs vs #2144) |
+| #1501 | mute-while-recording strand | deferred (conflicts) |
+| #1503 / #1028 | volume/pause while recording | deferred (conflicts + scope) |
+
 ## Note
 - GitNexus e Graphify vanno rieseguiti dopo merge sostanziosi.
 - Artefatti CI in `VoiceLab\artifacts\`.
