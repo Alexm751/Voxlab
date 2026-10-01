@@ -1,0 +1,81 @@
+# Voxlab / general Linux build image (Podman rootless-friendly).
+# Toolchains: Python (uv + latest CPython), Node, Bun, Rust/Cargo, Go.
+# Plus Tauri/GTK deps for Handy/Voxlab cargo check & tauri build --no-bundle.
+FROM docker.io/library/ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    CARGO_HOME=/opt/cargo \
+    RUSTUP_HOME=/opt/rustup \
+    GOPATH=/opt/go \
+    GOBIN=/opt/go/bin \
+    BUN_INSTALL=/opt/bun \
+    PATH=/opt/cargo/bin:/opt/go/bin:/usr/local/go/bin:/opt/bun/bin:/opt/node/bin:/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        clang \
+        cmake \
+        curl \
+        git \
+        gnupg \
+        libasound2-dev \
+        libappindicator3-dev \
+        libgtk-3-dev \
+        libgtk-layer-shell-dev \
+        librsvg2-dev \
+        libsoup-3.0-dev \
+        libssl-dev \
+        libwebkit2gtk-4.1-dev \
+        libxdo-dev \
+        libayatana-appindicator3-dev \
+        libvulkan-dev \
+        glslc \
+        spirv-headers \
+        meson \
+        ninja-build \
+        pkg-config \
+        python3 \
+        python3-pip \
+        python3-venv \
+        unzip \
+        wget \
+        xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- Rust (stable / latest via rustup) ---
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+      | sh -s -- -y --no-modify-path --profile minimal --default-toolchain stable \
+    && rustc --version && cargo --version
+
+# --- Go (latest stable tarball) ---
+RUN GO_VER="$(curl -fsSL https://go.dev/VERSION?m=text | head -1)" \
+    && curl -fsSL "https://go.dev/dl/${GO_VER}.linux-amd64.tar.gz" -o /tmp/go.tgz \
+    && rm -rf /usr/local/go \
+    && tar -C /usr/local -xzf /tmp/go.tgz \
+    && rm /tmp/go.tgz \
+    && mkdir -p /opt/go \
+    && go version
+
+# --- Node.js (latest LTS/Current binary from nodejs.org dist index) ---
+RUN NODE_VER="$(curl -fsSL https://nodejs.org/dist/index.json \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["version"])')" \
+    && curl -fsSL "https://nodejs.org/dist/${NODE_VER}/node-${NODE_VER}-linux-x64.tar.xz" -o /tmp/node.xz \
+    && mkdir -p /opt/node \
+    && tar -xJf /tmp/node.xz -C /opt/node --strip-components=1 \
+    && rm /tmp/node.xz \
+    && node --version && npm --version
+
+# --- Bun (latest) ---
+RUN curl -fsSL https://bun.sh/install | bash \
+    && bun --version
+
+# --- Python latest via uv (keeps system python3 for apt scripts) ---
+RUN curl -fsSL https://astral.sh/uv/install.sh | sh \
+    && uv python install \
+    && uv --version \
+    && uv python list
+
+WORKDIR /workspace
+CMD ["bash"]
