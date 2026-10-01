@@ -54,10 +54,10 @@ jobs:
       - name: Add Flathub and install SDK
         run: |
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          # rust-stable//24.08 is rustc 1.89; build script installs ≥1.90 via rustup.
           flatpak install -y --user flathub \
             org.gnome.Platform//48 \
             org.gnome.Sdk//48 \
-            org.freedesktop.Sdk.Extension.rust-stable//24.08 \
             org.freedesktop.Sdk.Extension.llvm19//24.08
 
       - uses: oven-sh/setup-bun@v2
@@ -71,9 +71,12 @@ jobs:
             .flatpak-sdk-prefix
             ~/.cargo/registry
             ~/.cargo/git
+            ~/.cargo/bin
+            ~/.rustup
             src-tauri/target
-          key: flatpak-src-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock', 'bun.lock') }}
+          key: flatpak-src-rustup-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock', 'bun.lock') }}
           restore-keys: |
+            flatpak-src-rustup-${{ runner.os }}-
             flatpak-src-${{ runner.os }}-
 
       - name: Build Flatpak (source inside SDK)
