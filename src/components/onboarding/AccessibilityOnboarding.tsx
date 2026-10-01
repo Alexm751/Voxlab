@@ -101,6 +101,7 @@ const AccessibilityOnboarding: React.FC<AccessibilityOnboardingProps> = ({
       setPermissions({
         accessibility: nextPlatform === "macos" ? "needed" : "granted",
         microphone: nextPlatform === "other" ? "granted" : "needed",
+        remoteDesktop: "granted",
       });
       return;
     }
