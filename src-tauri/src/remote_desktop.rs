@@ -1,7 +1,9 @@
 #[cfg(target_os = "linux")]
 use crate::settings::PasteMethod;
 #[cfg(target_os = "linux")]
-use ashpd::desktop::remote_desktop::{DeviceType, KeyState, RemoteDesktop};
+use ashpd::desktop::remote_desktop::{
+    DeviceType, KeyState, RemoteDesktop, SelectDevicesOptions,
+};
 #[cfg(target_os = "linux")]
 use ashpd::desktop::PersistMode;
 #[cfg(target_os = "linux")]
@@ -273,8 +275,8 @@ async fn type_text_async(text: &str) -> Result<(), String> {
     let (proxy, session) = open_session_async(false).await?;
 
     async fn send_keycode(
-        proxy: &RemoteDesktop<'static>,
-        session: &ashpd::desktop::Session<'static, RemoteDesktop<'static>>,
+        proxy: &RemoteDesktop,
+        session: &ashpd::desktop::Session<RemoteDesktop>,
         keycode: i32,
         key_event_delay_ms: u64,
     ) -> Result<(), String> {
@@ -299,15 +301,15 @@ async fn type_text_async(text: &str) -> Result<(), String> {
     }
 
     async fn send_key_event(
-        proxy: &RemoteDesktop<'static>,
-        session: &ashpd::desktop::Session<'static, RemoteDesktop<'static>>,
+        proxy: &RemoteDesktop,
+        session: &ashpd::desktop::Session<RemoteDesktop>,
         keycode: i32,
         state: KeyState,
         error_context: &str,
         key_event_delay_ms: u64,
     ) -> Result<(), String> {
         proxy
-            .notify_keyboard_keycode(session, keycode, state)
+            .notify_keyboard_keycode(session, keycode, state, Default::default())
             .await
             .map_err(|e| format!("{}: {}", error_context, e))?;
         if key_event_delay_ms > 0 {
@@ -317,8 +319,8 @@ async fn type_text_async(text: &str) -> Result<(), String> {
     }
 
     async fn send_stroke(
-        proxy: &RemoteDesktop<'static>,
-        session: &ashpd::desktop::Session<'static, RemoteDesktop<'static>>,
+        proxy: &RemoteDesktop,
+        session: &ashpd::desktop::Session<RemoteDesktop>,
         stroke: &keymap::KeyStroke,
         key_event_delay_ms: u64,
     ) -> Result<(), String> {
@@ -382,8 +384,8 @@ async fn type_text_async(text: &str) -> Result<(), String> {
     }
 
     async fn send_unicode_via_ctrl_shift_u(
-        proxy: &RemoteDesktop<'static>,
-        session: &ashpd::desktop::Session<'static, RemoteDesktop<'static>>,
+        proxy: &RemoteDesktop,
+        session: &ashpd::desktop::Session<RemoteDesktop>,
         keyboard_map: &keymap::KeyboardMap,
         ch: char,
         key_event_delay_ms: u64,
@@ -493,7 +495,7 @@ async fn type_text_async(text: &str) -> Result<(), String> {
 // ============================================================================
 #[cfg(target_os = "linux")]
 async fn close_session_async(
-    session: &ashpd::desktop::Session<'static, RemoteDesktop<'static>>,
+    session: &ashpd::desktop::Session<RemoteDesktop>,
 ) -> Result<(), String> {
     session
         .close()
@@ -506,8 +508,8 @@ async fn open_session_async(
     allow_prompt: bool,
 ) -> Result<
     (
-        RemoteDesktop<'static>,
-        ashpd::desktop::Session<'static, RemoteDesktop<'static>>,
+        RemoteDesktop,
+        ashpd::desktop::Session<RemoteDesktop>,
     ),
     String,
 > {
@@ -518,7 +520,7 @@ async fn open_session_async(
 
     // Create a new portal session.
     let session = proxy
-        .create_session()
+        .create_session(Default::default())
         .await
         .map_err(|e| format!("Failed to create RemoteDesktop session: {}", e))?;
 
@@ -537,21 +539,19 @@ async fn open_session_async(
     }
 
     // Request keyboard device access via the portal.
-    let device_types = DeviceType::Keyboard.into();
+    let select_opts = SelectDevicesOptions::default()
+        .set_devices(DeviceType::Keyboard)
+        .set_restore_token(remote_desktop_token.as_deref())
+        .set_persist_mode(PersistMode::ExplicitlyRevoked);
     proxy
-        .select_devices(
-            &session,
-            device_types,
-            remote_desktop_token.as_deref(),
-            PersistMode::ExplicitlyRevoked,
-        )
+        .select_devices(&session, select_opts)
         .await
         .map_err(|e| format!("Failed to request RemoteDesktop devices: {}", e))?
         .response()
         .map_err(|e| format!("RemoteDesktop device request denied: {}", e))?;
     // Start the session (may trigger permission UI).
     let response = proxy
-        .start(&session, None)
+        .start(&session, None, Default::default())
         .await
         .map_err(|e| format!("Failed to start RemoteDesktop session: {}", e))?
         .response()
@@ -705,8 +705,8 @@ fn key_combo_for_paste_method(paste_method: &PasteMethod) -> Result<RemoteDeskto
 
 #[cfg(target_os = "linux")]
 async fn send_key_combo_async(
-    proxy: &RemoteDesktop<'static>,
-    session: &ashpd::desktop::Session<'static, RemoteDesktop<'static>>,
+    proxy: &RemoteDesktop,
+    session: &ashpd::desktop::Session<RemoteDesktop>,
     key_combo: &RemoteDesktopKeyCombo,
     delay_ms: u64,
 ) -> Result<(), String> {
@@ -758,15 +758,15 @@ async fn send_key_combo_async(
 
 #[cfg(target_os = "linux")]
 async fn notify_keycode(
-    proxy: &RemoteDesktop<'static>,
-    session: &ashpd::desktop::Session<'static, RemoteDesktop<'static>>,
+    proxy: &RemoteDesktop,
+    session: &ashpd::desktop::Session<RemoteDesktop>,
     keycode: i32,
     state: KeyState,
     combo_name: &str,
     delay_ms: u64,
 ) -> Result<(), String> {
     proxy
-        .notify_keyboard_keycode(session, keycode, state)
+        .notify_keyboard_keycode(session, keycode, state, Default::default())
         .await
         .map_err(|e| format!("{combo_name}: key event failed: {e}"))?;
 

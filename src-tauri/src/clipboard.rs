@@ -383,6 +383,17 @@ pub fn get_available_typing_tools() -> Vec<String> {
     tools
 }
 
+/// True when a Linux native typing path exists so Enigo can be skipped.
+#[cfg(target_os = "linux")]
+pub fn has_native_input_tool() -> bool {
+    is_remote_desktop_supported()
+        || is_wtype_available()
+        || is_kwtype_available()
+        || is_dotool_available()
+        || is_ydotool_available()
+        || is_xdotool_available()
+}
+
 /// Check if wtype is available (Wayland text input tool)
 #[cfg(target_os = "linux")]
 fn is_remote_desktop_available() -> bool {
