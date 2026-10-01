@@ -174,7 +174,7 @@ build_in_sdk() {
         '
 
     if [ ! -f "$PROJECT_ROOT/src-tauri/target/release/handy" ]; then
-        log_error "SDK build failed â€” binary not found at src-tauri/target/release/handy"
+        log_error "SDK build failed — binary not found at src-tauri/target/release/handy"
         exit 1
     fi
 
@@ -187,21 +187,11 @@ build_in_sdk() {
     # Binary
     install -Dm755 "$PROJECT_ROOT/src-tauri/target/release/handy" "$staging/data/usr/bin/handy"
 
-    # Resources
+    # Resources + transcribe runtime libs share /usr/lib/Handy — matching the
+    # Tauri deb layout and the binary rpath ($ORIGIN/../lib/Handy).
     mkdir -p "$staging/data/usr/lib/Handy"
     cp -r "$PROJECT_ROOT/src-tauri/resources" "$staging/data/usr/lib/Handy/resources"
-
-    # Transcribe-cpp shared libraries (installed by the cmake build)
-    # Copy entire lib64 directory with symlinks preserved
-    local transcribe_lib_dir
-    transcribe_lib_dir=$(find "$PROJECT_ROOT/src-tauri/target/release/build" -maxdepth 3 -name "out" -path "*/transcribe-cpp-sys-*" -type d 2>/dev/null | head -1)
-    if [ -n "$transcribe_lib_dir" ] && [ -d "$transcribe_lib_dir/lib64" ]; then
-        mkdir -p "$staging/data/usr/lib64"
-        cp -a "$transcribe_lib_dir"/lib64/*.so* "$staging/data/usr/lib64/"
-        log_info "Bundled transcribe-cpp runtime libraries from $transcribe_lib_dir/lib64"
-    else
-        log_warn "transcribe-cpp library directory not found"
-    fi
+    stage_transcribe_into_handy_lib "$staging/data/usr/lib/Handy"
 
     # Desktop file
     mkdir -p "$staging/data/usr/share/applications"
@@ -240,7 +230,130 @@ DESKTOP
     ar rc "$deb_output" "$staging/debian-binary" "$staging/control.tar.gz" "$staging/data.tar.gz"
 
     rm -rf "$staging"
+    verify_deb_has_transcribe_libs "$deb_output"
     log_info "SDK build produced: $deb_output"
+}
+
+# Copy libtranscribe + ggml backends into dest (must be .../usr/lib/Handy).
+# Prefer build.rs staging (src-tauri/transcribe-libs); fall back to the
+# transcribe-cpp-sys CMake install dir via stage-transcribe-libs.sh.
+stage_transcribe_into_handy_lib() {
+    local dest="${1:?stage_transcribe_into_handy_lib: dest dir required}"
+    mkdir -p "$dest"
+
+    local staged="$PROJECT_ROOT/src-tauri/transcribe-libs"
+    if ls "$staged"/libtranscribe.so* >/dev/null 2>&1; then
+        log_info "Bundling transcribe runtime libs from $staged"
+        cp -a "$staged"/libtranscribe.so* "$dest"/
+        cp -a "$staged"/libggml*.so* "$dest"/ 2>/dev/null || true
+    else
+        log_warn "transcribe-libs/ empty or missing; falling back to cmake out dir"
+        local libdir=""
+        # Prefer the dir that contains transcribe-link.json (newest match).
+        local newest
+        newest="$(find "$PROJECT_ROOT/src-tauri/target/release/build" \
+            -type f -name transcribe-link.json -path '*transcribe-cpp-sys*/out/lib*' 2>/dev/null \
+            | while read -r f; do
+                printf '%s\t%s\n' "$(stat -c '%Y' "$f" 2>/dev/null || echo 0)" "$f"
+              done | sort -rn | head -1 | cut -f2- || true)"
+        if [ -n "$newest" ]; then
+            libdir="$(dirname "$newest")"
+        else
+            local out_dir
+            out_dir="$(find "$PROJECT_ROOT/src-tauri/target/release/build" \
+                -maxdepth 3 -type d -name out -path '*/transcribe-cpp-sys-*' 2>/dev/null | head -1 || true)"
+            if [ -n "$out_dir" ] && [ -d "$out_dir/lib" ]; then
+                libdir="$out_dir/lib"
+            elif [ -n "$out_dir" ] && [ -d "$out_dir/lib64" ]; then
+                libdir="$out_dir/lib64"
+            fi
+        fi
+        if [ -z "$libdir" ] || [ ! -d "$libdir" ]; then
+            log_error "Could not locate transcribe-cpp runtime libraries"
+            find "$PROJECT_ROOT/src-tauri/target" \( -name 'libtranscribe*' -o -name 'libggml*' \) 2>/dev/null | head -50 || true
+            exit 1
+        fi
+        bash "$SCRIPT_DIR/ci/stage-transcribe-libs.sh" "$libdir" "$dest"
+    fi
+
+    if ! ls "$dest"/libtranscribe.so* >/dev/null 2>&1; then
+        log_error "libtranscribe.so* missing from $dest after staging"
+        ls -la "$dest" >&2 || true
+        exit 1
+    fi
+    if ! ls "$dest"/libggml-cpu*.so* >/dev/null 2>&1; then
+        log_error "libggml-cpu*.so* missing from $dest after staging"
+        ls -la "$dest" >&2 || true
+        exit 1
+    fi
+    log_info "Staged transcribe libs into $dest:"
+    ls -la "$dest" | grep -E 'libtranscribe|libggml' || true
+}
+
+# Fail if a .deb (synthetic or Tauri-built) lacks the SONAME the loader needs.
+verify_deb_has_transcribe_libs() {
+    local deb="${1:?verify_deb_has_transcribe_libs: .deb path required}"
+    local listing
+    listing="$(mktemp)"
+    if command -v dpkg-deb >/dev/null 2>&1; then
+        dpkg-deb -c "$deb" > "$listing"
+    else
+        local tmp
+        tmp="$(mktemp -d)"
+        (cd "$tmp" && ar x "$deb")
+        if [ -f "$tmp/data.tar.gz" ]; then
+            tar -tzf "$tmp/data.tar.gz" > "$listing"
+        elif [ -f "$tmp/data.tar.xz" ]; then
+            tar -tJf "$tmp/data.tar.xz" > "$listing"
+        elif [ -f "$tmp/data.tar.zst" ]; then
+            tar --zstd -tf "$tmp/data.tar.zst" > "$listing"
+        else
+            log_error "Could not list contents of $deb"
+            rm -rf "$tmp" "$listing"
+            exit 1
+        fi
+        rm -rf "$tmp"
+    fi
+
+    if ! grep -Eq 'usr/lib/Handy/libtranscribe\.so(\.[0-9]+)+' "$listing"; then
+        log_error "Deb missing usr/lib/Handy/libtranscribe.so* (SONAME): $deb"
+        grep -E 'libtranscribe|libggml|usr/lib' "$listing" | head -40 >&2 || true
+        rm -f "$listing"
+        exit 1
+    fi
+    if ! grep -Eq 'usr/lib/Handy/libggml-cpu' "$listing"; then
+        log_error "Deb missing usr/lib/Handy/libggml-cpu*.so: $deb"
+        grep -E 'libggml' "$listing" | head -40 >&2 || true
+        rm -f "$listing"
+        exit 1
+    fi
+    log_info "Deb contains libtranscribe + ggml CPU backends under usr/lib/Handy"
+    rm -f "$listing"
+}
+
+# After flatpak-builder, confirm the sandbox resolves libtranscribe via rpath.
+verify_flatpak_resolves_transcribe() {
+    local build_dir="${1:?verify_flatpak_resolves_transcribe: build dir required}"
+    log_info "Verifying libtranscribe resolves inside Flatpak build..."
+    local ldd_out
+    if ! ldd_out="$(flatpak-builder --run "$build_dir" "$FLATPAK_DIR/$APP_ID.yaml" \
+        sh -c 'ldd /app/bin/handy' 2>&1)"; then
+        log_error "flatpak-builder --run ldd failed"
+        echo "$ldd_out" >&2
+        exit 1
+    fi
+    if echo "$ldd_out" | grep -q 'libtranscribe.*not found'; then
+        log_error "libtranscribe reported as not found:"
+        echo "$ldd_out" | grep -E 'transcribe|not found' >&2
+        exit 1
+    fi
+    if ! echo "$ldd_out" | grep -E 'libtranscribe\.so' | grep -v 'not found' | grep -q .; then
+        log_error "libtranscribe not resolved by ldd inside Flatpak:"
+        echo "$ldd_out" | grep -E 'transcribe|ggml|not found' >&2 || echo "$ldd_out" >&2
+        exit 1
+    fi
+    log_info "libtranscribe resolves inside Flatpak:"
+    echo "$ldd_out" | grep -E 'libtranscribe|libggml' || true
 }
 
 main() {
@@ -266,6 +379,7 @@ main() {
     if [ -n "$deb_input" ] && [ -f "$deb_input" ]; then
         deb_path="$deb_input"
         log_info "Using provided .deb: $deb_path"
+        verify_deb_has_transcribe_libs "$deb_path"
     else
         check_sdk_extensions
         build_in_sdk
@@ -293,6 +407,8 @@ main() {
         --repo="$REPO_DIR" \
         "$BUILD_DIR" \
         "$APP_ID.yaml"
+
+    verify_flatpak_resolves_transcribe "$BUILD_DIR"
 
     # Create single-file bundle
     local version

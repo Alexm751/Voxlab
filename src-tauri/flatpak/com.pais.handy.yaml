@@ -98,9 +98,21 @@ modules:
       # Install binary
       - install -Dm755 deb-extract/usr/bin/handy /app/bin/handy
 
-      # Install bundled resources (models, sounds, etc.)
+      # Install bundled resources + transcribe runtime libs (rpath: $ORIGIN/../lib/Handy)
       - mkdir -p /app/lib/Handy
       - cp -r deb-extract/usr/lib/Handy/. /app/lib/Handy/
+      - |
+        set -e
+        if ! ls /app/lib/Handy/libtranscribe.so* >/dev/null 2>&1; then
+          echo "ERROR: libtranscribe.so* missing from /app/lib/Handy after deb extract" >&2
+          ls -la /app/lib/Handy >&2 || true
+          exit 1
+        fi
+        if ! ls /app/lib/Handy/libggml-cpu*.so* >/dev/null 2>&1; then
+          echo "ERROR: libggml-cpu*.so* missing from /app/lib/Handy after deb extract" >&2
+          ls -la /app/lib/Handy >&2 || true
+          exit 1
+        fi
       - find /app/lib/Handy -type f -exec chmod 644 {} \;
 
       # Install desktop file with correct icon reference
