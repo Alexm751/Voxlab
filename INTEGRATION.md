@@ -1,8 +1,8 @@
 # INTEGRATION.md — registro Voxlab
 
 ## Come riprendere
-- **Stato:** Fase 1 in corso su `wave/linux-gnome` — merge Handy Linux GNOME (overlay, portal shortcuts, RemoteDesktop, Flatpak).
-- **Prossimo passo:** CI verde sulla PR interna → merge su `main`; poi riprendere #1568 (parziale) e #1300 (keyboard None) come Plan B.
+- **Stato:** Fase 1 **chiusa** — PR [#13](https://github.com/Alexm751/Voxlab/pull/13) mergiata su `main` (`79f4ee9`); CI Flatpak verde (run 36885527321).
+- **Prossimo passo:** ticket [#6](https://github.com/Alexm751/Voxlab/issues/6) (audio #1644 vs #2144) → Fase 2; deferred Handy #1568 / #1300 / #2025 solo se serve.
 - **Workspace:** `C:\Users\Alessandro\OneDrive\Sviluppo\VoiceLab`
 - **Repo locale:** `VoiceLab\Voxlab` → https://github.com/Alexm751/Voxlab
 - **Upstream (sola lettura):** https://github.com/cjpais/Handy
@@ -34,7 +34,7 @@
 - [x] Graphify skill/rule installata in `Voxlab/.cursor/rules/`
 - [x] Graphify grafo (`graphify-out/`)
 - [x] CI Flatpak (PR [#12](https://github.com/Alexm751/Voxlab/pull/12) mergiata)
-- [ ] Merge PR Linux (Fase 1 — branch `wave/linux-gnome`)
+- [x] Merge PR Linux (Fase 1 — PR [#13](https://github.com/Alexm751/Voxlab/pull/13) `wave/linux-gnome`)
 
 ## Checklist CI (Fase 0b)
 - [x] Workflow upstream multi-piattaforma → solo `workflow_dispatch` (disabilitati via `gh workflow disable`)
