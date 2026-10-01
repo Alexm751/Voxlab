@@ -168,6 +168,7 @@ transcribe-cpp = { version = "0.2.4", default-features = false, features = [
   "dynamic-backends",
   "vulkan",
 ] }
+x11-dl = "2.21"
 
 # TEMPORARY: tao pinned past 0.35.3 for the Wayland client-side-decorations fix
 # (tao #1218, fixes tauri #11856 — dead titlebar buttons after visible(false) →
