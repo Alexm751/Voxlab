@@ -10,6 +10,7 @@ use tauri_plugin_store::StoreExt;
 
 pub const APPLE_INTELLIGENCE_PROVIDER_ID: &str = "apple_intelligence";
 pub const APPLE_INTELLIGENCE_DEFAULT_MODEL_ID: &str = "Apple Intelligence";
+pub const DEFAULT_REMOTE_DESKTOP_KEY_EVENT_DELAY_MS: u64 = 5;
 
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
 #[serde(rename_all = "lowercase")]
@@ -290,6 +291,7 @@ pub enum Theme {
 pub enum TypingTool {
     #[default]
     Auto,
+    RemoteDesktop,
     Wtype,
     Kwtype,
     Dotool,
@@ -485,6 +487,8 @@ pub struct AppSettings {
     pub reliable_paste: bool,
     #[serde(default = "default_typing_tool")]
     pub typing_tool: TypingTool,
+    #[serde(default = "default_remote_desktop_key_event_delay_ms")]
+    pub remote_desktop_key_event_delay_ms: u64,
     #[serde(default)]
     pub external_script_path: Option<String>,
     #[serde(default = "default_filler_word_removal_enabled")]
@@ -505,7 +509,7 @@ pub struct AppSettings {
     pub transcribe_gpu_device: Option<String>,
     #[serde(default)]
     pub extra_recording_buffer_ms: u64,
-    #[serde(default = "default_vad_enabled")]
+#[serde(default = "default_vad_enabled")]
     pub vad_enabled: bool,
     /// Experimental detector implementation. Silero remains the stable default.
     #[serde(default)]
@@ -515,6 +519,8 @@ pub struct AppSettings {
     /// `overlay_position` (position `none` → style `None`).
     #[serde(default = "default_overlay_style")]
     pub overlay_style: OverlayStyle,
+    #[serde(default)]
+    pub remote_desktop_token: Option<String>,
 }
 
 fn default_model() -> String {
@@ -604,6 +610,10 @@ fn default_paste_delay_ms() -> u64 {
 
 fn default_paste_delay_after_ms() -> u64 {
     60
+}
+
+fn default_remote_desktop_key_event_delay_ms() -> u64 {
+    DEFAULT_REMOTE_DESKTOP_KEY_EVENT_DELAY_MS
 }
 
 fn default_auto_submit() -> bool {
@@ -961,6 +971,7 @@ pub fn get_default_settings() -> AppSettings {
         paste_delay_after_ms: default_paste_delay_after_ms(),
         reliable_paste: false,
         typing_tool: default_typing_tool(),
+        remote_desktop_key_event_delay_ms: default_remote_desktop_key_event_delay_ms(),
         external_script_path: None,
         filler_word_removal_enabled: default_filler_word_removal_enabled(),
         custom_filler_words: None,
@@ -968,9 +979,10 @@ pub fn get_default_settings() -> AppSettings {
         ort_accelerator: OrtAcceleratorSetting::default(),
         transcribe_gpu_device: default_transcribe_gpu_device(),
         extra_recording_buffer_ms: 0,
-        vad_enabled: default_vad_enabled(),
+vad_enabled: default_vad_enabled(),
         vad_backend: VadBackend::default(),
         overlay_style: default_overlay_style(),
+        remote_desktop_token: None,
     }
 }
 
@@ -978,6 +990,18 @@ impl Default for AppSettings {
     fn default() -> Self {
         get_default_settings()
     }
+}
+
+/// Returns the persisted Remote Desktop portal token, if one is stored.
+pub fn get_remote_desktop_token(app: &AppHandle) -> Option<String> {
+    get_settings(app).remote_desktop_token
+}
+
+/// Persists or clears the Remote Desktop portal token in application settings.
+pub fn set_remote_desktop_token(app: &AppHandle, token: Option<String>) {
+    let mut settings = get_settings(app);
+    settings.remote_desktop_token = token;
+    write_settings(app, settings);
 }
 
 impl AppSettings {

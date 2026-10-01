@@ -12,6 +12,8 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 #[cfg(target_os = "linux")]
+use crate::remote_desktop;
+#[cfg(target_os = "linux")]
 use crate::utils::{is_gnome_wayland, is_kde_wayland, is_wayland};
 
 fn with_enigo<T>(
@@ -122,7 +124,22 @@ fn paste_via_clipboard(
 #[cfg(target_os = "linux")]
 fn try_send_key_combo_linux(paste_method: &PasteMethod) -> Result<bool, String> {
     if is_wayland() {
-        // Wayland: prefer wtype (but not on KDE or GNOME), then dotool, then ydotool
+        // Wayland: prefer Remote Desktop portal (works with any layout/language),
+        // then wtype (but not on KDE or GNOME), then dotool, then ydotool
+        if is_remote_desktop_available() {
+            info!("Using Remote Desktop portal for key combo");
+            let result = match paste_method {
+                PasteMethod::CtrlV => remote_desktop::send_ctrl_v(),
+                _ => remote_desktop::send_paste_key_combo(paste_method),
+            };
+            match result {
+                Ok(()) => return Ok(true),
+                Err(err) => warn!(
+                    "Remote Desktop key combo failed, trying next fallback: {}",
+                    err
+                ),
+            }
+        }
         // Note: wtype doesn't work on KDE (no zwp_virtual_keyboard_manager_v1 support)
         // or on GNOME/Mutter (same reason — Mutter deliberately does not implement
         // the virtual-keyboard-v1 protocol).
@@ -165,6 +182,11 @@ fn try_direct_typing_linux(text: &str, preferred_tool: TypingTool) -> Result<boo
     // If user specified a tool, try only that one
     if preferred_tool != TypingTool::Auto {
         return match preferred_tool {
+            TypingTool::RemoteDesktop if is_remote_desktop_supported() => {
+                info!("Using user-specified Remote Desktop portal");
+                type_text_via_remote_desktop(text)?;
+                Ok(true)
+            }
             TypingTool::Wtype if is_wtype_available() => {
                 info!("Using user-specified wtype");
                 type_text_via_wtype(text)?;
@@ -199,6 +221,16 @@ fn try_direct_typing_linux(text: &str, preferred_tool: TypingTool) -> Result<boo
 
     // Auto mode - existing fallback chain
     if is_wayland() {
+        if is_remote_desktop_available() {
+            info!("Using Remote Desktop portal for direct text input");
+            match type_text_via_remote_desktop(text) {
+                Ok(()) => return Ok(true),
+                Err(err) => warn!(
+                    "Remote Desktop direct input failed, trying next fallback: {}",
+                    err
+                ),
+            }
+        }
         // KDE Wayland: prefer kwtype (uses KDE Fake Input protocol, supports umlauts)
         if is_kde_wayland() && is_kwtype_available() {
             info!("Using kwtype for direct text input on KDE Wayland");
@@ -246,6 +278,9 @@ fn try_direct_typing_linux(text: &str, preferred_tool: TypingTool) -> Result<boo
 #[cfg(target_os = "linux")]
 pub fn get_available_typing_tools() -> Vec<String> {
     let mut tools = vec!["auto".to_string()];
+    if is_remote_desktop_supported() {
+        tools.push("remote_desktop".to_string());
+    }
     if is_wtype_available() {
         tools.push("wtype".to_string());
     }
@@ -262,6 +297,29 @@ pub fn get_available_typing_tools() -> Vec<String> {
         tools.push("xdotool".to_string());
     }
     tools
+}
+
+/// Check if wtype is available (Wayland text input tool)
+#[cfg(target_os = "linux")]
+fn is_remote_desktop_available() -> bool {
+    remote_desktop::is_available()
+}
+
+#[cfg(target_os = "linux")]
+fn is_remote_desktop_supported() -> bool {
+    is_wayland()
+}
+
+/// Type text directly via the Remote Desktop portal.
+#[cfg(target_os = "linux")]
+fn type_text_via_remote_desktop(text: &str) -> Result<(), String> {
+    match remote_desktop::send_type_text(text) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            warn!("Remote Desktop direct input failed: {}", err);
+            Err(format!("Remote Desktop portal failed: {}", err))
+        }
+    }
 }
 
 /// Check if wtype is available (Wayland text input tool)
