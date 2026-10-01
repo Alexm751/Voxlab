@@ -203,6 +203,7 @@ pub enum RecordingRetentionPeriod {
 pub enum KeyboardImplementation {
     Tauri,
     HandyKeys,
+    Portal,
 }
 
 impl Default for KeyboardImplementation {
