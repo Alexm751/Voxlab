@@ -386,8 +386,11 @@ let mut tray_builder = TrayIconBuilder::new()
         tray::update_tray_menu(&app_handle_for_listener);
     });
 
-// Apply the autostart preference (SMAppService / Flatpak portal / plugin)
-    autostart::apply_autostart(app_handle, settings.autostart_enabled);
+    // Apply the autostart preference (SMAppService / Flatpak portal / plugin)
+    // off the startup path — macOS status query is synchronous and only matters
+    // at next login.
+    let autostart_app = app_handle.clone();
+    std::thread::spawn(move || autostart::reconcile_autostart(&autostart_app));
 
     // Create the recording overlay window (hidden by default)
     utils::create_recording_overlay(app_handle);
