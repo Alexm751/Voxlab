@@ -6,6 +6,13 @@ sdk: org.gnome.Sdk
 
 command: handy
 
+# ayatana-ido installs to lib64 on x86_64; without this, libayatana-indicator
+# fails pkg-config looking only under /app/lib.
+build-options:
+  env:
+    PKG_CONFIG_PATH: /app/lib64/pkgconfig:/app/lib/pkgconfig
+    LD_LIBRARY_PATH: /app/lib64:/app/lib
+
 finish-args:
   - --socket=wayland
   - --socket=fallback-x11
