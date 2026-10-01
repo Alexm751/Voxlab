@@ -1,8 +1,9 @@
 # INTEGRATION.md — registro Voxlab
 
 ## Come riprendere
-- **Stato:** Fase 1 **chiusa** — PR [#13](https://github.com/Alexm751/Voxlab/pull/13) mergiata su `main` (`79f4ee9`); CI Flatpak verde (run 36885527321).
-- **Prossimo passo:** ticket [#6](https://github.com/Alexm751/Voxlab/issues/6) (audio #1644 vs #2144) → Fase 2; deferred Handy #1568 / #1300 / #2025 solo se serve.
+- **Stato:** Fase 1 chiusa; decisione audio Fase 2 presa (**#2144**, #1644 rimandata).
+- **Prossimo passo:** ticket [#7](https://github.com/Alexm751/Voxlab/issues/7) — ondata `wave/stt-robustness` partendo da Handy #2144.
+- **Artefatto testabile ora:** `artifacts/fase1-36885527321/handy_0.9.7_x86_64.flatpak` (run CI 36885527321). ID ancora `com.pais.handy`.
 - **Workspace:** `C:\Users\Alessandro\OneDrive\Sviluppo\VoiceLab`
 - **Repo locale:** `VoiceLab\Voxlab` → https://github.com/Alexm751/Voxlab
 - **Upstream (sola lettura):** https://github.com/cjpais/Handy
@@ -20,6 +21,7 @@
 | Packaging Flatpak CI | Manifest/script da Handy #548 + script SDK build da #1560 (SPIRV/transcribe); senza merge del resto delle PR |
 | Ayatana su x86_64 | `PKG_CONFIG_PATH` + `ldflags -L/app/lib64` + `LIBRARY_PATH`/`LD_LIBRARY_PATH` (lib64) |
 | Wayland/Flatpak input | **split** #548→#1287→#689 (non #1560) |
+| Audio Fase 2 (#1644 vs #2144) | **#2144** (default input config); **#1644** (cpal 0.17 / macOS 26) rimandata a post-collaudo Linux / effort macOS |
 
 ## Checklist setup
 - [x] Clone Handy → `Voxlab/`
