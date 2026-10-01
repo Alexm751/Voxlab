@@ -1,37 +1,10 @@
-# Nix CI — two tiers:
-#
-# 1. Quick checks (bun.nix sync, flake eval) run on ANY source change
-#    so compilation-breaking edits are caught by flake eval.
-# 2. Full nix build (~25 min) only runs when nix packaging files change.
-#
-# Build artifacts are pushed to Cachix so Nix users can skip local compilation.
-
 name: "nix build check"
+
+# Voxlab: upstream multi-platform / release workflow kept for reference but
+# auto-triggers removed. Use CI Flatpak (ci-build.yml) instead.
+
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "flake.nix"
-      - "flake.lock"
-      - ".nix/**"
-      - "bun.lock"
-      - "src-tauri/**"
-      - "src/**"
-      - ".github/workflows/**"
-  pull_request:
-    paths:
-      - "flake.nix"
-      - "flake.lock"
-      - ".nix/**"
-      - "bun.lock"
-      - "src-tauri/**"
-      - "src/**"
-      - ".github/workflows/**"
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
 
 jobs:
   nix-build:
@@ -70,14 +43,14 @@ jobs:
           echo ""
           echo "::warning::.nix/bun.nix is out of sync with bun.lock"
           echo ""
-          echo "┌──────────────────────────────────────────────────────────────┐"
-          echo "│  .nix/bun.nix is outdated. To fix, run:                      │"
-          echo "│                                                              │"
-          echo "│    bun scripts/check-nix-deps.ts                             │"
-          echo "│                                                              │"
-          echo "│  Or simply run 'bun install' — the postinstall hook will     │"
-          echo "│  regenerate it automatically. Commit the resulting changes.  │"
-          echo "└──────────────────────────────────────────────────────────────┘"
+          echo "â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”"
+          echo "â”‚  .nix/bun.nix is outdated. To fix, run:                      â”‚"
+          echo "â”‚                                                              â”‚"
+          echo "â”‚    bun scripts/check-nix-deps.ts                             â”‚"
+          echo "â”‚                                                              â”‚"
+          echo "â”‚  Or simply run 'bun install' â€” the postinstall hook will     â”‚"
+          echo "â”‚  regenerate it automatically. Commit the resulting changes.  â”‚"
+          echo "â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜"
           echo ""
           echo "Diff:"
           git diff .nix/bun.nix
@@ -85,7 +58,7 @@ jobs:
 
       # Evaluate the flake to catch issues with cargo git dependency hashes,
       # missing inputs, or other Nix expression errors.
-      # Skip if bun.nix is already outdated — nix eval would fail with a
+      # Skip if bun.nix is already outdated â€” nix eval would fail with a
       # cryptic error, and the bun-check step already printed a clear message.
       - name: Check flake evaluation
         if: steps.bun-check.outputs.outdated != 'true'
@@ -105,9 +78,9 @@ jobs:
           cat eval_err.log
           exit 1
 
-      # Detect whether nix packaging files changed — if only source code
+      # Detect whether nix packaging files changed â€” if only source code
       # changed, the quick checks above are sufficient.
-      # Skipped on workflow_dispatch (no base ref) — full build runs instead.
+      # Skipped on workflow_dispatch (no base ref) â€” full build runs instead.
       - name: Check if nix files changed
         if: github.event_name == 'pull_request'
         id: nix-files
@@ -120,7 +93,7 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # Full build — catches runtime build errors (broken dependencies,
+      # Full build â€” catches runtime build errors (broken dependencies,
       # sandbox issues, compilation failures) that flake eval alone misses.
       # On PRs: only runs when nix packaging files change (~25 min with cold cache).
       # On push to main and workflow_dispatch: always runs so every commit on

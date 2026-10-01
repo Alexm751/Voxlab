@@ -1,6 +1,10 @@
 name: "Build Test"
 
-on: workflow_dispatch
+# Voxlab: upstream multi-platform / release workflow kept for reference but
+# auto-triggers removed. Use CI Flatpak (ci-build.yml) instead.
+
+on:
+  workflow_dispatch:
 
 jobs:
   build-test:

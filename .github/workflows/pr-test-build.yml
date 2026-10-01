@@ -1,12 +1,10 @@
 name: "PR Test Build"
 
+# Voxlab: upstream multi-platform / release workflow kept for reference but
+# auto-triggers removed. Use CI Flatpak (ci-build.yml) instead.
+
 on:
   workflow_dispatch:
-    inputs:
-      pr_number:
-        description: "PR number to build"
-        required: true
-        type: string
 
 jobs:
   build-test:
@@ -65,5 +63,5 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: ${{ inputs.pr_number }},
-              body: `## 🧪 Test Build Ready\n\nBuild artifacts for PR #${{ inputs.pr_number }} are available for testing.\n\n**[Download artifacts from workflow run](${runUrl})**\n\nArtifacts expire after 30 days.`
+              body: `## ðŸ§ª Test Build Ready\n\nBuild artifacts for PR #${{ inputs.pr_number }} are available for testing.\n\n**[Download artifacts from workflow run](${runUrl})**\n\nArtifacts expire after 30 days.`
             });
