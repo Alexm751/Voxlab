@@ -1,9 +1,9 @@
 # INTEGRATION.md — registro Voxlab
 
 ## Come riprendere
-- **Stato:** Fase 1 chiusa; decisione audio Fase 2 presa (**#2144**, #1644 rimandata).
-- **Prossimo passo:** ticket [#7](https://github.com/Alexm751/Voxlab/issues/7) — ondata `wave/stt-robustness` partendo da Handy #2144.
-- **Artefatto testabile ora:** `artifacts/fase1-36885527321/handy_0.9.7_x86_64.flatpak` (run CI 36885527321). ID ancora `com.pais.handy`.
+- **Stato:** Fase 2 in corso su `wave/stt-robustness` — 9 PR Handy mergeate (#2144 + mergeable).
+- **Prossimo passo:** CI verde sulla PR interna → merge su `main`; conflicting (#1875/#1713/#1501/#1503/#1028) restano deferred.
+- **Artefatto testabile (Fase 1):** `artifacts/fase1-36885527321/handy_0.9.7_x86_64.flatpak`. ID ancora `com.pais.handy`.
 - **Workspace:** `C:\Users\Alessandro\OneDrive\Sviluppo\VoiceLab`
 - **Repo locale:** `VoiceLab\Voxlab` → https://github.com/Alexm751/Voxlab
 - **Upstream (sola lettura):** https://github.com/cjpais/Handy
