@@ -1,9 +1,9 @@
 # INTEGRATION.md — registro Voxlab
 
 ## Come riprendere
-- **Stato:** Fase 1 chiusa; decisione audio Fase 2 presa (**#2144**, #1644 rimandata).
-- **Prossimo passo:** ticket [#7](https://github.com/Alexm751/Voxlab/issues/7) — ondata `wave/stt-robustness` partendo da Handy #2144.
-- **Artefatto testabile ora:** `artifacts/fase1-36885527321/handy_0.9.7_x86_64.flatpak` (run CI 36885527321). ID ancora `com.pais.handy`.
+- **Stato:** Fase 2 in corso su `wave/stt-robustness` — 9 PR Handy mergeate (#2144 + mergeable).
+- **Prossimo passo:** CI verde sulla PR interna → merge su `main`; conflicting (#1875/#1713/#1501/#1503/#1028) restano deferred.
+- **Artefatto testabile (Fase 1):** `artifacts/fase1-36885527321/handy_0.9.7_x86_64.flatpak`. ID ancora `com.pais.handy`.
 - **Workspace:** `C:\Users\Alessandro\OneDrive\Sviluppo\VoiceLab`
 - **Repo locale:** `VoiceLab\Voxlab` → https://github.com/Alexm751/Voxlab
 - **Upstream (sola lettura):** https://github.com/cjpais/Handy
@@ -59,6 +59,24 @@
 | #1300 | keyboard None | deferred (Plan B; conflitti i18n) |
 | minori | #2148 #2131 #2102 #2025 | tentati / vedi log |
 | #1774 | PipeWire | fog — solo se mic problematico |
+
+## PR da integrare (Fase 2)
+| PR | Titolo | Stato |
+|----|--------|-------|
+| #2144 | default input config | merged on wave |
+| #2110 | don't abort startup if always-on mic fails | merged on wave |
+| #2155 | time out hung post-processing | merged on wave |
+| #2159 | autostart off startup thread | merged on wave (lib.rs → reconcile_autostart) |
+| #2108 | settings listeners once | merged on wave |
+| #2150 | warn digital silence | merged on wave |
+| #2097 | tap vs hold by key event time | merged on wave |
+| #2130 | numpad keys in shortcuts | merged on wave |
+| #2168 | mute immediately option | merged on wave |
+| #1644 | cpal 0.17 / macOS 26 | deferred (decisione #6) |
+| #1875 | follow changed default mic | deferred (conflict managers/audio.rs) |
+| #1713 | transcription hang + audio_feedback | deferred (conflict recorder.rs vs #2144) |
+| #1501 | mute-while-recording strand | deferred (conflicts) |
+| #1503 / #1028 | volume/pause while recording | deferred (conflicts + scope) |
 
 ## Note
 - GitNexus e Graphify vanno rieseguiti dopo merge sostanziosi.
