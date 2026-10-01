@@ -23,11 +23,22 @@ fn with_enigo<T>(
     let enigo_state = app_handle
         .try_state::<EnigoState>()
         .ok_or("Enigo state not initialized")?;
-    let mut enigo = enigo_state
+    let mut enigo_slot = enigo_state
         .0
         .lock()
         .map_err(|e| format!("Failed to lock Enigo: {}", e))?;
-    f(&mut enigo)
+
+    // On X11 a long-lived Enigo instance can hold keycode bindings the server
+    // has since discarded; recreate before each injection (#1722).
+    #[cfg(target_os = "linux")]
+    if !is_wayland() {
+        input::refresh_enigo(&mut enigo_slot)?;
+    }
+
+    let enigo = enigo_slot
+        .as_mut()
+        .ok_or("Enigo instance is not available")?;
+    f(enigo)
 }
 
 fn write_text_to_clipboard(app_handle: &AppHandle, text: &str) -> Result<(), String> {
@@ -186,7 +197,7 @@ fn paste_via_clipboard(
             info!("Restoring image to clipboard");
             let _ = clipboard.write_image(&image);
         } else {
-            // Nothing was there to begin with — don't leave the transcription behind.
+            // Nothing was there to begin with â€” don't leave the transcription behind.
             let _ = clipboard.clear();
         }
     })
@@ -214,7 +225,7 @@ fn try_send_key_combo_linux(paste_method: &PasteMethod) -> Result<bool, String> 
             }
         }
         // Note: wtype doesn't work on KDE (no zwp_virtual_keyboard_manager_v1 support)
-        // or on GNOME/Mutter (same reason — Mutter deliberately does not implement
+        // or on GNOME/Mutter (same reason â€” Mutter deliberately does not implement
         // the virtual-keyboard-v1 protocol).
         if !is_kde_wayland() && !is_gnome_wayland() && is_wtype_available() {
             info!("Using wtype for key combo");
@@ -312,7 +323,7 @@ fn try_direct_typing_linux(text: &str, preferred_tool: TypingTool) -> Result<boo
         }
         // Wayland: prefer wtype, then dotool, then ydotool
         // Note: wtype doesn't work on KDE (no zwp_virtual_keyboard_manager_v1 support)
-        // or on GNOME/Mutter (same reason — Mutter deliberately does not implement
+        // or on GNOME/Mutter (same reason â€” Mutter deliberately does not implement
         // the virtual-keyboard-v1 protocol).
         if !is_kde_wayland() && !is_gnome_wayland() && is_wtype_available() {
             info!("Using wtype for direct text input");
@@ -735,7 +746,7 @@ fn type_text_via_kwtype(text: &str) -> Result<(), String> {
 }
 
 /// Write text to clipboard via wl-copy (Wayland clipboard tool).
-/// Uses Stdio::null() to avoid blocking on repeated calls — wl-copy forks a
+/// Uses Stdio::null() to avoid blocking on repeated calls â€” wl-copy forks a
 /// daemon that inherits piped fds, causing read_to_end to hang indefinitely.
 #[cfg(target_os = "linux")]
 fn write_clipboard_via_wl_copy(text: &str) -> Result<(), String> {
