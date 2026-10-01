@@ -540,7 +540,7 @@ async fn open_session_async(
 
     // Request keyboard device access via the portal.
     let select_opts = SelectDevicesOptions::default()
-        .set_devices(DeviceType::Keyboard)
+        .set_devices(Some(DeviceType::Keyboard.into()))
         .set_restore_token(remote_desktop_token.as_deref())
         .set_persist_mode(PersistMode::ExplicitlyRevoked);
     proxy
